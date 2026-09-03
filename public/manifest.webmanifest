@@ -1,0 +1,10 @@
+{
+  "name": "Stream Vault",
+  "short_name": "Stream Vault",
+  "description": "Browse and play lawful, publicly available live television streams.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#07090f",
+  "theme_color": "#07090f",
+  "icons": [{ "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+}
