@@ -1,6 +1,16 @@
 import './style.css'
 
-const PUBLIC_PLAYLIST = 'https://raw.githubusercontent.com/Free-TV/IPTV/master/playlist.m3u8'
+const PUBLIC_COLLECTIONS = {
+  free: { label: 'Free TV collection', url: 'https://raw.githubusercontent.com/Free-TV/IPTV/master/playlist.m3u8' },
+  world: { label: 'All public channels', url: 'https://iptv-org.github.io/iptv/index.m3u' },
+  us: { label: 'United States', url: 'https://iptv-org.github.io/iptv/countries/us.m3u' },
+  news: { label: 'News', url: 'https://iptv-org.github.io/iptv/categories/news.m3u' },
+  sports: { label: 'Sports', url: 'https://iptv-org.github.io/iptv/categories/sports.m3u' },
+  entertainment: { label: 'Entertainment', url: 'https://iptv-org.github.io/iptv/categories/entertainment.m3u' },
+  movies: { label: 'Movie channels', url: 'https://iptv-org.github.io/iptv/categories/movies.m3u' },
+  kids: { label: 'Kids', url: 'https://iptv-org.github.io/iptv/categories/kids.m3u' },
+  music: { label: 'Music', url: 'https://iptv-org.github.io/iptv/categories/music.m3u' }
+}
 const $ = (selector) => document.querySelector(selector)
 const $$ = (selector) => [...document.querySelectorAll(selector)]
 const escapeHtml = (value = '') => String(value).replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]))
@@ -8,7 +18,7 @@ const safeUrl = (value = '') => { try { const url = new URL(value); return /^htt
 const readJson = (store, key, fallback) => { try { return JSON.parse(store.getItem(key)) ?? fallback } catch { return fallback } }
 
 const state = {
-  view: 'home', source: 'public', sourceLabel: 'Public channels', xtream: null,
+  view: 'home', source: 'public', sourceLabel: 'All public channels', publicCollection: 'world', xtream: null,
   live: [], movies: [], series: [], categories: { live: {}, movies: {}, series: {} },
   visible: 60, current: null, hls: null
 }
@@ -49,14 +59,18 @@ function episodeUrl(row) {
   return `${x.server}/series/${encodeURIComponent(x.username)}/${encodeURIComponent(x.password)}/${row.id}.${ext}`
 }
 
-async function loadPublic() {
-  setLiveStatus('Loading the public channel shelf…')
+async function loadPublic(key = state.publicCollection) {
+  const collection = PUBLIC_COLLECTIONS[key] || PUBLIC_COLLECTIONS.world
+  state.publicCollection = PUBLIC_COLLECTIONS[key] ? key : 'world'
+  localStorage.setItem('stream-vault-public-collection', state.publicCollection)
+  $('#publicCollection').value = state.publicCollection
+  setLiveStatus(`Loading ${collection.label.toLowerCase()}…`)
   try {
-    const response = await fetch(PUBLIC_PLAYLIST)
+    const response = await fetch(collection.url)
     if (!response.ok) throw new Error()
     state.live = parseM3U(await response.text())
     state.categories.live = Object.fromEntries([...new Set(state.live.map(x => x.category))].sort().map(x => [x, x]))
-    state.source = 'public'; state.sourceLabel = 'Public channels'; state.movies = []; state.series = []
+    state.source = 'public'; state.sourceLabel = collection.label; state.movies = []; state.series = []; state.visible = 60
     renderAll()
   } catch { setLiveStatus('The public directory could not be reached. Try again in a normal browser or add your own authorized playlist.') }
 }
@@ -110,8 +124,9 @@ function renderLive() {
 }
 function renderMedia(kind) {
   const singular = kind.slice(0,-1); populateSelect(`#${singular}Category`, state.categories[kind]); const rows = filtered(kind)
-  $(`#${singular}Grid`).innerHTML = rows.map(mediaCard).join(''); $(`#${singular}Count`).textContent = state.source === 'xtream' ? `${rows.length.toLocaleString()} titles` : `Connect Xtream Codes to load ${kind}`
-  $(`#${singular}Empty`).hidden = state.source === 'xtream' && rows.length > 0
+  const hasLibrary = state.source === 'xtream' || (state.source === 'm3u' && kind === 'movies')
+  $(`#${singular}Grid`).innerHTML = rows.map(mediaCard).join(''); $(`#${singular}Count`).textContent = hasLibrary ? `${rows.length.toLocaleString()} titles` : `Connect Xtream Codes to load ${kind}`
+  $(`#${singular}Empty`).hidden = hasLibrary && rows.length > 0
   $(`#home${singular[0].toUpperCase()+singular.slice(1)}Rail`).innerHTML = state[kind].slice(0,12).map(mediaCard).join('')
 }
 function renderRecents() {
@@ -123,6 +138,7 @@ function renderSource() {
   $('#sourceName').textContent = state.source === 'xtream' ? 'Xtream connected' : state.sourceLabel
   $('#heroSource').textContent = state.sourceLabel; $('#sourceDot').classList.toggle('connected', state.source !== 'public')
   $$('.xtream-only').forEach(x => x.hidden = state.source !== 'xtream'); $('#disconnectButton').hidden = state.source === 'public'
+  $('#publicCollection').disabled = state.source !== 'public'
 }
 function renderAll() { renderSource(); renderLive(); renderMedia('movies'); renderMedia('series'); renderRecents() }
 
@@ -131,7 +147,7 @@ function navigate(view) {
 }
 function findItem(id) { return [...state.live,...state.movies,...state.series].find(x => x.id === id) }
 function saveRecent(item) {
-  const url = item.type === 'live' ? liveUrl(item) : item.type === 'movie' ? movieUrl(item) : item.url
+  const url = item.url || (item.type === 'live' ? liveUrl(item) : item.type === 'movie' ? movieUrl(item) : '')
   const record = { id:item.id, name:item.name, logo:item.logo || '', poster:item.poster || '', type:item.type, url, meta:item.category || '' }
   const old = readJson(localStorage,'stream-vault-recents',[]); localStorage.setItem('stream-vault-recents',JSON.stringify([record,...old.filter(x=>x.id!==record.id)].slice(0,20)))
 }
@@ -166,7 +182,7 @@ async function openDetail(item) {
 }
 
 function openSource(tab='xtream') { $$('.source-tab').forEach(x=>x.classList.toggle('active',x.dataset.tab===tab)); $$('.source-panel').forEach(x=>x.classList.toggle('active',x.dataset.panel===tab)); $('#sourceStatus').hidden=true; if(!$('#sourceDialog').open) $('#sourceDialog').showModal() }
-function disconnect() { localStorage.removeItem('stream-vault-xtream'); sessionStorage.removeItem('stream-vault-xtream'); state.xtream=null; $('#sourceDialog').close(); loadPublic() }
+function disconnect() { localStorage.removeItem('stream-vault-xtream'); sessionStorage.removeItem('stream-vault-xtream'); state.xtream=null; $('#sourceDialog').close(); loadPublic(state.publicCollection) }
 
 async function cast() {
   const video=$('#video')
@@ -191,8 +207,9 @@ $('#sourceButton').addEventListener('click',()=>openSource()); $('#heroConnect')
 $('#searchToggle').addEventListener('click',()=>{navigate('live');$('#liveSearch').focus()})
 $$('.source-tab').forEach(x=>x.addEventListener('click',()=>openSource(x.dataset.tab)))
 $('#disconnectButton').addEventListener('click',disconnect)
+$('#publicCollection').addEventListener('change',event=>loadPublic(event.target.value))
 $('#xtreamForm').addEventListener('submit',async event=>{event.preventDefault();const button=$('#xtreamSubmit');button.disabled=true;button.textContent='Connecting…';$('#sourceStatus').hidden=true;try{await connectXtream({server:$('#xtreamServer').value,username:$('#xtreamUsername').value,password:$('#xtreamPassword').value},$('#rememberXtream').checked);$('#sourceDialog').close();navigate('home')}catch(error){state.xtream=null;$('#sourceStatus').textContent=`${error.message || 'Could not connect.'} If the login works in another app, the provider may be blocking browser CORS requests.`;$('#sourceStatus').hidden=false}finally{button.disabled=false;button.textContent='Connect'}})
-$('#m3uForm').addEventListener('submit',async event=>{event.preventDefault();try{let text='';const file=$('#m3uFile').files?.[0];if(file)text=await file.text();else{const url=$('#m3uUrl').value.trim();if(!safeUrl(url))throw new Error('Choose a file or enter a complete playlist URL.');const response=await fetch(url);if(!response.ok)throw new Error(`Playlist returned ${response.status}.`);text=await response.text()}const rows=parseM3U(text);if(!rows.length)throw new Error('No playable HTTP streams were found.');state.live=rows;state.categories.live=Object.fromEntries([...new Set(rows.map(x=>x.category))].map(x=>[x,x]));state.movies=[];state.series=[];state.source='m3u';state.sourceLabel=$('#m3uName').value.trim()||file?.name||'My M3U playlist';state.xtream=null;renderAll();$('#sourceDialog').close();navigate('live')}catch(error){$('#sourceStatus').textContent=`${error.message} A remote playlist must allow browser CORS access.`;$('#sourceStatus').hidden=false}})
+$('#m3uForm').addEventListener('submit',async event=>{event.preventDefault();try{let text='';const file=$('#m3uFile').files?.[0];if(file)text=await file.text();else{const url=$('#m3uUrl').value.trim();if(!safeUrl(url))throw new Error('Choose a file or enter a complete playlist URL.');const response=await fetch(url);if(!response.ok)throw new Error(`Playlist returned ${response.status}.`);text=await response.text()}const rows=parseM3U(text);if(!rows.length)throw new Error('No playable HTTP streams were found.');const importType=$('#m3uType').value;state.source='m3u';state.sourceLabel=$('#m3uName').value.trim()||file?.name||'My M3U playlist';state.xtream=null;if(importType==='movies'){state.live=[];state.movies=rows.map(row=>({...row,id:`movie-${row.id}`,poster:row.logo,type:'movie'}));state.series=[];state.categories={live:{},movies:Object.fromEntries([...new Set(state.movies.map(x=>x.category))].map(x=>[x,x])),series:{}}}else{state.live=rows;state.categories={live:Object.fromEntries([...new Set(rows.map(x=>x.category))].map(x=>[x,x])),movies:{},series:{}};state.movies=[];state.series=[]}renderAll();$('#sourceDialog').close();navigate(importType==='movies'?'movies':'live')}catch(error){$('#sourceStatus').textContent=`${error.message} A remote playlist must allow browser CORS access.`;$('#sourceStatus').hidden=false}})
 for(const kind of ['live','movie','series']){$(`#${kind}Search`).addEventListener('input',()=>kind==='live'?renderLive():renderMedia(`${kind}s`));$(`#${kind}Category`).addEventListener('change',()=>kind==='live'?renderLive():renderMedia(`${kind}s`))}
 $('#loadMore').addEventListener('click',()=>{state.visible+=60;renderLive()})
 $('#castButton').addEventListener('click',cast)
@@ -202,4 +219,5 @@ $('#playerDialog').addEventListener('close',stopPlayer)
 
 initCast()
 const saved=readJson(sessionStorage,'stream-vault-xtream',null)||readJson(localStorage,'stream-vault-xtream',null)
-if(saved){$('#xtreamServer').value=saved.server||'';$('#xtreamUsername').value=saved.username||'';$('#xtreamPassword').value=saved.password||'';$('#rememberXtream').checked=Boolean(localStorage.getItem('stream-vault-xtream'));connectXtream(saved,$('#rememberXtream').checked).catch(()=>loadPublic())}else loadPublic()
+const publicCollection=localStorage.getItem('stream-vault-public-collection')||'world'
+if(saved){$('#xtreamServer').value=saved.server||'';$('#xtreamUsername').value=saved.username||'';$('#xtreamPassword').value=saved.password||'';$('#rememberXtream').checked=Boolean(localStorage.getItem('stream-vault-xtream'));connectXtream(saved,$('#rememberXtream').checked).catch(()=>loadPublic(publicCollection))}else loadPublic(publicCollection)
