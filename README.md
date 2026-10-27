@@ -1,5 +1,7 @@
 # Stream Vault
 
+> **Cloudflare edition** of [stream-vault](https://github.com/nikkimasani/stream-vault)
+
 Stream Vault is a responsive, private-first IPTV library and player for lawful public streams and user-supplied authorized Xtream Codes and M3U services. Its interface combines Stream Vault's visual identity with navigation patterns inspired by Lume and media-library patterns similar to NyxPlayer.
 
 ## Features
@@ -21,13 +23,16 @@ npm install
 npm run dev
 ```
 
-## Production build
+## Deploy
+
+**Cloudflare Pages** project `stream-vault-cloudflare`, output directory `dist`:
 
 ```bash
 npm run build
+npx wrangler pages deploy dist --project-name stream-vault-cloudflare
 ```
 
-Deploy the generated `dist` directory. No API key is required.
+No API key is required.
 
 ## Content policy
 
